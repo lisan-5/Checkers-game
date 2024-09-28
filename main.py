@@ -577,4 +577,141 @@ def ai_move(game):
             else:
                 chosen_move = random.choice(valid_moves)
 
-        move_piece(game, chosen_move.start_row, chosen
+        move_piece(game, chosen_move.start_row, chosenchosen_move.start_col, chosen_move.end_row, chosen_move.end_col)
+            game.is_player1_turn = not game.is_player1_turn
+            if game.is_player1_turn:
+                game.player2.moves_made += 1
+            else:
+                game.player1.moves_made += 1
+
+def undo_move(game):
+    if game.move_history:
+        last_move = game.move_history.pop()
+        game.board.cells[last_move.start_row][last_move.start_col].cell_type = game.board.cells[last_move.end_row][last_move.end_col].cell_type
+        game.board.cells[last_move.end_row][last_move.end_col].cell_type = CellType.EMPTY
+        game.is_player1_turn = not game.is_player1_turn
+        if game.is_player1_turn:
+            game.player2.moves_made -= 1
+        else:
+            game.player1.moves_made -= 1
+        if last_move.is_capture:
+            mid_row = (last_move.start_row + last_move.end_row) // 2
+            mid_col = (last_move.start_col + last_move.end_col) // 2
+            game.board.cells[mid_row][mid_col].cell_type = CellType.PLAYER2_QORKI if game.is_player1_turn else CellType.PLAYER1_QORKI
+            if game.is_player1_turn:
+                game.player1.captured_pieces -= 1
+            else:
+                game.player2.captured_pieces -= 1
+        game.last_move = game.move_history[-1] if game.move_history else None
+
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((BOARD_WIDTH, BOARD_HEIGHT))
+    pygame.display.set_caption("Checkers Game")
+    clock = pygame.time.Clock()
+
+    game = Game()
+    settings = Settings()
+    init_game(game)
+
+    is_main_menu = True
+    is_settings_menu = False
+    is_game_over = False
+    game_over_status = 0
+
+    if settings.music_on:
+        pygame.mixer.music.play(-1)
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                if game.save_on_exit:
+                    save_game(game, "saved_game.txt")
+                pygame.quit()
+                sys.exit()
+
+            if is_main_menu:
+                new_game_button, load_game_button, settings_button = draw_main_menu(screen)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if new_game_button.collidepoint(event.pos):
+                        init_game(game)
+                        is_game_over = False
+                        is_main_menu = False
+                    elif load_game_button.collidepoint(event.pos):
+                        if load_game(game, "saved_game.txt"):
+                            is_game_over = False
+                            is_main_menu = False
+                    elif settings_button.collidepoint(event.pos):
+                        is_settings_menu = True
+                        is_main_menu = False
+            elif is_settings_menu:
+                music_button, sound_button, difficulty_button, back_button = draw_settings_menu(screen, settings)
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if music_button.collidepoint(event.pos):
+                        settings.music_on = not settings.music_on
+                        if settings.music_on:
+                            pygame.mixer.music.play(-1)
+                        else:
+                            pygame.mixer.music.stop()
+                    elif sound_button.collidepoint(event.pos):
+                        settings.sound_on = not settings.sound_on
+                    elif difficulty_button.collidepoint(event.pos):
+                        difficulties = list(Difficulty)
+                        current_index = difficulties.index(settings.difficulty)
+                        settings.difficulty = difficulties[(current_index + 1) % len(difficulties)]
+                    elif back_button.collidepoint(event.pos):
+                        is_settings_menu = False
+                        is_main_menu = True
+            else:
+                if not is_game_over:
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        handle_input(game, event.pos)
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_u:  # Undo move
+                            undo_move(game)
+                        elif event.key == pygame.K_p:  # Pause game
+                            game.toggle_pause()
+
+                    game_over_status = check_game_over(game)
+                    if game_over_status != 0:
+                        is_game_over = True
+
+                    if not game.is_player1_turn:  # AI's turn
+                        ai_move(game)
+
+        if not is_main_menu and not is_settings_menu:
+            screen.fill(WHITE)
+            draw_board(screen, game)
+            draw_cells(screen, game)
+
+            if is_game_over:
+                font = pygame.font.Font(None, 36)
+                if game_over_status == 0:
+                    text = font.render("Game Over", True, BLACK)
+                elif game_over_status == 1:
+                    text = font.render("Player 1 Wins!", True, BLACK)
+                elif game_over_status == 2:
+                    text = font.render("Player 2 Wins!", True, BLACK)
+                else:
+                    text = font.render("It's a Draw!", True, BLACK)
+                screen.blit(text, (BOARD_WIDTH // 2 - text.get_width() // 2, BOARD_HEIGHT // 2))
+
+                return_text = font.render("Press 'R' to return to Main Menu", True, BLACK)
+                screen.blit(return_text, (BOARD_WIDTH // 2 - return_text.get_width() // 2, BOARD_HEIGHT // 2 + 40))
+
+                keys = pygame.key.get_pressed()
+                if keys[pygame.K_r]:
+                    is_main_menu = True
+                    is_game_over = False
+
+            if game.paused:
+                font = pygame.font.Font(None, 72)
+                pause_text = font.render("PAUSED", True, RED)
+                screen.blit(pause_text, (BOARD_WIDTH // 2 - pause_text.get_width() // 2, BOARD_HEIGHT // 2 - pause_text.get_height() // 2))
+
+            pygame.display.flip()
+
+        clock.tick(60)
+
+if __name__ == "__main__":
+    main()
